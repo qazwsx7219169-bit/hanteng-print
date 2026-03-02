@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漢騰影印雲端服務 Han-Teng Print</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <style>
+        body { font-family: 'Microsoft JhengHei', sans-serif; background-color: #f0f2f5; padding: 20px; margin: 0; color: #1a1a1a;}
+        .container { max-width: 420px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+        .header { text-align: center; margin-bottom: 25px; border-bottom: 2px solid #f0f0f0; padding-bottom: 15px;}
+        .header h2 { margin: 0; color: #2c3e50; font-size: 24px; }
+        .header p { margin: 5px 0 0; color: #7f8c8d; font-size: 14px; }
+        .form-group { margin-bottom: 18px; }
+        label { display: block; margin-bottom: 6px; font-weight: 600; color: #2d3748; font-size: 15px;}
+        .en-label { font-size: 13px; color: #718096; font-weight: normal; margin-left: 5px;}
+        select, input[type="file"] { width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; font-size: 15px; }
+        .summary-box { background-color: #fff9c4; color: #827717; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #fff59d; margin-top: 20px; }
+        .total-price { font-size: 32px; font-weight: bold; color: #e65100; margin-top: 5px;}
+        .discount-msg { color: #d32f2f; font-size: 14px; font-weight: bold; margin-top: 5px; display: none;}
+        button#submitBtn { width: 100%; padding: 15px; background-color: #00B900; color: white; border: none; border-radius: 30px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 15px; }
+        .result-box { display: none; margin-top: 20px; padding: 20px; background-color: #e8f5e9; border-radius: 12px; text-align: center; }
+        .code-display { font-size: 42px; font-weight: 800; color: #d32f2f; letter-spacing: 5px; background: #fff; padding: 10px; border-radius: 8px; border: 2px dashed #feb2b2; margin: 10px 0;}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h2>漢騰影印中心</h2>
+        <p>自助列印上傳系統<br>Self-Service Cloud Printing</p>
+    </div>
+
+    <div class="form-group">
+        <label>1. 上傳檔案 <span class="en-label">Upload File (Max 5MB)</span></label>
+        <input type="file" id="fileInput" accept=".jpg, .jpeg, .png, .pdf">
+    </div>
+
+    <div class="form-group">
+        <label>2. 尺寸與色彩 <span class="en-label">Size & Color</span></label>
+        <select id="spec" onchange="calculateTotal()">
+            <option value="1_BW">A4 黑白 ($1) / A4 B&W</option>
+            <option value="10_Color">A4 彩色 ($10) / A4 Color</option>
+            <option value="2_BW">A3 黑白 ($2) / A3 B&W</option>
+            <option value="20_Color">A3 彩色 ($20) / A3 Color</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>3. 列印份數 <span class="en-label">Copies</span></label>
+        <select id="copies" onchange="calculateTotal()">
+            <option value="1">1 份 (Copy)</option>
+            <option value="2">2 份 (Copies)</option>
+            <option value="3">3 份 (Copies)</option>
+            <option value="4">4 份 (Copies)</option>
+            <option value="5">5 份 (Copies)</option>
+            <option value="6">6 份 (Copies)</option>
+            <option value="7">7 份 (Copies)</option>
+            <option value="8">8 份 (Copies)</option>
+            <option value="9">9 份 (Copies)</option>
+            <option value="10">10 份 (Copies)</option>
+        </select>
+    </div>
+
+    <div id="summary" class="summary-box">
+        <div>總計頁數 (Total Pages)：<b id="pageCount">0</b> 頁</div>
+        <div style="margin-top: 10px;">應付金額 (Total Amount)</div>
+        <div class="total-price">$ <span id="totalMoney">0</span></div>
+        <div id="discountMsg" class="discount-msg"></div>
+    </div>
+
+    <button id="submitBtn" onclick="submitForm()">送出並取得取件碼 Submit</button>
+
+    <div id="resultBox" class="result-box">
+        ✅ 上傳完成 Upload Success！<br>您的取件碼 Your Code：
+        <div class="code-display" id="codeDisplay">----</div>
+        <p style="font-size: 14px; color: #555;">請至櫃檯出示號碼並繳費<br>Please show this code at the counter.</p>
+    </div>
+</div>
+
+<script>
+    let gPageCount = 0;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+    document.getElementById('fileInput').addEventListener('change', async function(e) {
+        const file = e.target.files[0];
+        if (!file) {
+            gPageCount = 0;
+            calculateTotal();
+            return;
+        }
+
+        const maxSize = 5 * 1024 * 1024; 
+        if (file.size > maxSize) {
+            alert('⚠️ 檔案太大！\n請將檔案壓縮在 5MB 以內，或截圖後再上傳喔！\nFile size exceeds 5MB limit. Please compress your file.');
+            e.target.value = ''; 
+            gPageCount = 0;
+            calculateTotal();
+            return;
+        }
+
+        if (file.type === 'application/pdf') {
+            const reader = new FileReader();
+            reader.onload = async function() {
+                const typedarray = new Uint8Array(this.result);
+                const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                gPageCount = pdf.numPages;
+                calculateTotal();
+            };
+            reader.readAsArrayBuffer(file);
+        } else {
+            gPageCount = 1; 
+            calculateTotal();
+        }
+    });
+
+    function calculateTotal() {
+        const specValue = document.getElementById('spec').value;
+        const unitPrice = parseInt(specValue.split('_')[0]);
+        const colorType = specValue.split('_')[1]; 
+        const copies = parseInt(document.getElementById('copies').value);
+        
+        const totalPages = gPageCount * copies;
+        let total = unitPrice * totalPages;
+        
+        const discountMsgEl = document.getElementById('discountMsg');
+        discountMsgEl.style.display = 'none';
+
+        if (colorType === 'Color' && totalPages >= 10) {
+            total = Math.round(total * 0.8);
+            discountMsgEl.innerHTML = '🎉 符合優惠：彩色10張以上 8 折！<br><small>(20% off applied)</small>';
+            discountMsgEl.style.display = 'block';
+        } else if (colorType === 'BW' && total >= 100) {
+            total = Math.round(total * 0.9);
+            discountMsgEl.innerHTML = '🎉 符合優惠：黑白滿100元 9 折！<br><small>(10% off applied)</small>';
+            discountMsgEl.style.display = 'block';
+        }
+        
+        document.getElementById('pageCount').innerText = gPageCount;
+        document.getElementById('totalMoney').innerText = total;
+    }
+
+    // === 這裡是升級成真實 Webhook 傳送的程式碼 ===
+    async function submitForm() {
+        if (gPageCount === 0) { alert('請先選擇檔案 Please choose a file first.'); return; }
+        
+        const file = document.getElementById('fileInput').files[0];
+        const specValue = document.getElementById('spec').options[document.getElementById('spec').selectedIndex].text;
+        const copies = document.getElementById('copies').value;
+        const totalMoney = document.getElementById('totalMoney').innerText;
+        const code = Math.floor(1000 + Math.random() * 9000);
+
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.innerText = '檔案上傳中 Uploading...';
+        submitBtn.disabled = true;
+
+        // 打包要傳送的資料
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('code', code);
+        formData.append('spec', specValue);
+        formData.append('copies', copies);
+        formData.append('totalMoney', totalMoney);
+
+        try {
+            // 發射資料到您的 Make.com 接收站
+            const response = await fetch('https://hook.eu1.make.com/5qiyly9k24cur5awgsfgsgzbxjbj5jtv', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                document.getElementById('summary').style.display = 'none';
+                submitBtn.style.display = 'none';
+                document.getElementById('resultBox').style.display = 'block';
+                document.getElementById('codeDisplay').innerText = code;
+            } else {
+                alert('伺服器錯誤，請稍後再試！');
+                submitBtn.innerText = '重新送出 Submit';
+                submitBtn.disabled = false;
+            }
+        } catch (error) {
+            alert('連線失敗，請檢查網路狀態！');
+            submitBtn.innerText = '重新送出 Submit';
+            submitBtn.disabled = false;
+        }
+    }
+</script>
+
+</body>
+</html>
